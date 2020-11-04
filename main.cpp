@@ -14,8 +14,8 @@
 #define InputFile "in.txt"
 
 /// Globale Variablen
-const auto r_E{6378e3};
-const auto rad{M_PI / 180.0f}; // Radiant (1 Grad = 180 Grad / pi)
+const auto r_E{6378}; // Erdradius in [km]
+constexpr auto rad{M_PI / 180.0f}; // Radiant (1 Grad = 180 Grad / pi)
 
 /// Strukturen
 // Richtung Elevation-Winkel (Nord/Süd):
@@ -106,15 +106,15 @@ struct Coordinate
 // Liefert Winkel als Dezimalzahl
 inline float getAngle(const struct AngleAz &angle) noexcept
 {
-    const auto calc{angle.angle + angle.min / 60.0f + angle.sec / 3600.0f};
-    return (angle.dir == directionAz::W) ? -1 * calc : calc;
+    const auto calc{angle.angle + (angle.min / 60.0f) + (angle.sec / 3600.0f)};
+    return (angle.dir == directionAz::W) ? (-1 * calc) : calc;
 }
 
 // Liefert Winkel als Dezimalzahl
 inline float getAngle(const struct AngleEl &angle) noexcept
 {
-    const auto calc{angle.angle + angle.min / 60.0f + angle.sec / 3600.0f};
-    return (angle.dir == directionEl::S) ? -1 * calc : calc;
+    const auto calc{angle.angle + (angle.min / 60.0f) + (angle.sec / 3600.0f)};
+    return (angle.dir == directionEl::S) ? (-1 * calc) : calc;
 }
 
 // Gibt Winkel zwischen zwei Punkten auf der Kugel zurück
@@ -128,14 +128,14 @@ float getZentriwinkel(const struct Coordinate &a, const struct Coordinate &b) no
 
     // Zentriwinkel:
     const auto zeta{
-        acosf((sinf(phi_a * rad) * sinf(phi_b * rad) + cosf(phi_a * rad) * cosf(phi_b * rad) + cosf((lambda_b - lambda_a) * rad)))
+        acosf((sinf(phi_a) * sinf(phi_b) + cosf(phi_a) * cosf(phi_b) * cosf((lambda_b - lambda_a))))
         /* Trigon. Fkt. in C++ verwenden ihren Parameter in Bogenmaß, deshalb hier noch umrechnen (* rad). Für acosf nicht nötig, da Wert bereits im Bogenmaß! */
     };
 
     return (zeta / rad); // Winkel in Grad umrechnen
 }
 
-// Gibt Kurswinkel zurück: Winkel zwischen Nordrichtung und Südrichtung (im Bogenmaß!), zeta in Grad
+// Gibt Kurswinkel zurück: Winkel zwischen Nordrichtung und Südrichtung, zeta im Bogenmaß!
 float getKurswinkel(const struct Coordinate &a, const struct Coordinate &b, const float zeta)
 {
     if (zeta == 0)
@@ -145,7 +145,7 @@ float getKurswinkel(const struct Coordinate &a, const struct Coordinate &b, cons
     const auto phi_b{getAngle(b.phi)};
 
     const auto angle{
-        acosf((sinf(phi_b * rad) - sinf(phi_a * rad) * cosf(zeta)) / (cosf(phi_b * rad) * sinf(zeta * rad)))
+        acosf((sinf(phi_b) - sinf(phi_a) * cosf(zeta)) / (cosf(phi_b) * sinf(zeta)))
         /* Vorsicht: Division durch Null möglich! */
     };
 
@@ -301,5 +301,6 @@ int main(void)
 
     const auto zentri {getZentriwinkel(ref, ref2)};
 
+    std::cout << "Zentriwinkel: " << zentri << std::endl;   
     std::cout << "Entfernung: " << getStrecke(zentri) << std::endl;
 }

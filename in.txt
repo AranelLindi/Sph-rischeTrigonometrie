@@ -1,0 +1,11 @@
+# Format:
+## Breitengrad: [Winkel] [Minute] [Sekunde] [Richtung],
+## Längengrad: [Winkel] [Minute] [Sekunde] [Richtung],
+## Bezeichnung: Optional, beliebige Länge
+#
+# Wichtig! Es müssen alle drei Werte angegeben werden
+49 47 38 N, 9 57 4 O, Würzburg
+22 54 12 S, 43 12 34 W, Rio de Janeiro
+35 41 0 N, 139 46 0 O, Tokio
+33 51 0 S, 151 12 0 O, Sydney
+1 1 1 N, 1 1 1 W, Nirgendwo
