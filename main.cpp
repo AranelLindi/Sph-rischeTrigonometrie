@@ -1,12 +1,17 @@
 /// Standardbibliotheken
 #include <cmath>    // PI
 #include <iostream> // Dateneingabe Konsole
+#include <fstream>  // std::ifstream
 #include <cstdint>  // int-Typen
-#include <array>    // std::array
+#include <vector>   // std::vector
+#include <memory>   // SmartPointer
+#include <string>   // std::string
+#include <regex>    // string splitting
+#include <iomanip> // Ausrichtung Zahlen Konsole
 
 /// Makros
-#define ANZAHL 3                       // Anzahl Koordinatenpaare, die über Konsole eingegeben werden müssen
 #define trennung "*******************" // Trennungszeichen für Konsolenausgabe
+#define InputFile "in.txt"
 
 /// Globale Variablen
 const auto r_E{6378e3};
@@ -30,15 +35,15 @@ enum class directionAz
 // Winkel-Basisklasse:
 struct Angle // nicht instanziieren, sondern abgeleitete Klassen AngleEl/AngleAz verwenden!
 {
-    const uint16_t angle;
-    const uint8_t min;
-    const uint8_t sec;
+    const uint16_t angle; // Winkel
+    const uint8_t min; // Winkelminuten
+    const uint8_t sec; // Winkelsekunden
 
-    Angle(uint16_t _angle, uint8_t _min, uint8_t _sec) : angle(_angle), min(_min), sec(_sec) {}
+    Angle(uint16_t _angle, uint8_t _min, uint8_t _sec) : angle(_angle), min(_min), sec(_sec) {} // Konstruktor
 
-    void print(void) const
+    void print(void) const noexcept
     {
-        std::cout << "Winkel:\t" << angle << "° " << min << "' " << sec << "''";
+        std::cout << std::setw(3) << angle << "° " << std::setw(2) << static_cast<uint16_t>(min) << "' " << std::setw(2) << static_cast<uint16_t>(sec) << "'' ";
     }
 };
 
@@ -49,7 +54,7 @@ struct AngleEl : Angle
 
     AngleEl(uint16_t _angle, uint8_t _min, uint8_t _sec, directionEl _dir) : Angle(_angle, _min, _sec), dir(_dir) {}
 
-    void print(void) const
+    void print(void) const noexcept
     {
         Angle::print();
         if (dir == directionEl::N)
@@ -66,7 +71,7 @@ struct AngleAz : Angle
 
     AngleAz(uint16_t _angle, uint8_t _min, uint8_t _sec, directionAz _dir) : Angle(_angle, _min, _sec), dir(_dir) {}
 
-    void print(void) const
+    void print(void) const noexcept
     {
         Angle::print();
         if (dir == directionAz::W)
@@ -78,19 +83,21 @@ struct AngleAz : Angle
 
 struct Coordinate
 {
-    const AngleAz phi;    // Breitengrad
-    const AngleEl lambda; // Längengrad
+    const AngleEl phi;      // Breitengrad
+    const AngleAz lambda;   // Längengrad
+    const int8_t no;        // fortlaufende Nummer/Buchstabe
+    const std::string name; // Bezeichner aus .txt-Datei
 
-    Coordinate(uint16_t phi_angle, uint8_t phi_min, uint8_t phi_sec, directionAz phi_dir, uint16_t lambda_angle, uint8_t lambda_min, uint8_t lambda_sec, directionEl lambda_dir) : phi(phi_angle, phi_min, phi_sec, phi_dir), lambda(lambda_angle, lambda_min, lambda_sec, lambda_dir)
+    Coordinate(uint16_t phi_angle, uint8_t phi_min, uint8_t phi_sec, directionEl phi_dir, uint16_t lambda_angle, uint8_t lambda_min, uint8_t lambda_sec, directionAz lambda_dir, const std::string &bez, int8_t _no) : phi(phi_angle, phi_min, phi_sec, phi_dir), lambda(lambda_angle, lambda_min, lambda_sec, lambda_dir), name(bez), no(_no)
     {
     }
 
-    void print(void) const
+    void print(void) const noexcept
     {
-        std::cout << "Breitengrad:\n";
+        std::cout << no << ".) " << name << '\n';
+        std::cout << "Breitengrad \u03A6:\t";
         phi.print();
-        std::cout << '\n'
-                  << "Längengrad:\n";
+        std::cout << "Längengrad \u03BB:\t";
         lambda.print();
         std::cout << std::endl;
     }
@@ -132,7 +139,7 @@ float getZentriwinkel(const struct Coordinate &a, const struct Coordinate &b) no
 float getKurswinkel(const struct Coordinate &a, const struct Coordinate &b, const float zeta)
 {
     if (zeta == 0)
-        return 1; // Division durch Null abfangen
+        throw std::overflow_error("Division durch Null!"); // Division durch Null abfangen
 
     const auto phi_a{getAngle(a.phi)};
     const auto phi_b{getAngle(b.phi)};
@@ -175,97 +182,124 @@ struct Coordinate getNoerdlichsterPunkt(const struct Coordinate &a, float kurswi
     const auto lambda_frac_min{getFraction(lambda_n) * 60.0f};
     const auto lambda_frac_sec{getFraction(lambda_frac_min) * 60.0f};
 
-    return Coordinate(static_cast<int16_t>(phi_n), static_cast<uint8_t>(phi_frac_min), static_cast<uint8_t>(phi_frac_sec), directionAz::W, static_cast<int16_t>(lambda_n), static_cast<uint8_t>(lambda_frac_min), static_cast<uint8_t>(lambda_frac_sec), directionEl::N);
+    return Coordinate(static_cast<int16_t>(phi_n), static_cast<uint8_t>(phi_frac_min), static_cast<uint8_t>(phi_frac_sec), directionEl::N, static_cast<int16_t>(lambda_n), static_cast<uint8_t>(lambda_frac_min), static_cast<uint8_t>(lambda_frac_sec), directionAz::W, "Nördlichster Punkt", 0);
 }
+
+Coordinate getKoordinate(const std::vector<Coordinate>& coords, uint8_t i) {
+    for(const auto& ele : coords)
+        if (ele.no == i)
+            return ele;
+
+    throw std::logic_error("Kein zugehöriges Koordinatenobjekt gefunden!");
+}
+
 
 int main(void)
 {
     // Einleitung:
-    std::cout << trennung << "\n\n\tSPHÄRISCHE TRIGONOMETRIE\n\n\t\t" << trennung << "\n\n";
-    // Koordinatenpaare eingeben:
-    std::cout << "Bitte " << ANZAHL << " Koordinatenpaare eingeben:\n";
+    std::cout << trennung << "\n\n\tSPHÄRISCHE TRIGONOMETRIE\n\n\t\t" << trennung << "\n\n"
+              << "Daten werden aus '" << InputFile << "' eingelesen...\n" << std::endl;
 
-    std::array<Coordinate, ANZAHL> arr();
+    std::ifstream file;
+
+    file.open(InputFile);
+
+    if (!file)
+    {
+        throw std::runtime_error("Input-Datei ist fehlerhaft bzw. existiert nicht.");
+        return 1;
+    }
+
+    std::vector<Coordinate> coords;
+
+    std::string input;
 
     // Extra Scope um deklarierte Variablen schnell wieder zu zerstören:
+    // Schreibt in die Konsole:
+    const auto write = [](std::string str) -> void {
+        std::cout << str;
+    };
+
+    // Liest aus Konsole in Variable ein (Referenz!):
+    const auto read = [](auto &var) -> void {
+        std::cin >> var;
+    };
+
+    // Prüft, ob Wert innerhalb eines Intervals liegt:
+    const auto cond = [](const auto min, const auto max, const auto value) noexcept -> bool {
+        if (value >= min && value <= max)
+            return true;
+        else
+            return false;
+    };
+
+    // Wandelt einen char in entsprechende Richtung um (Azimut):
+    const auto retDirAz = [](const char *c) -> directionAz {
+        if (*c == 'W')
+            return directionAz::W;
+        else if (*c == 'O')
+            return directionAz::O;
+        else
+            throw std::logic_error("Ungültige Richtung (Azimut)!");
+    };
+
+    // Wandelt einen char in entsprechende Richtung um (Elevation):
+    const auto retDirEl = [](const char *c) -> directionEl {
+        if (*c == 'N')
+            return directionEl::N;
+        else if (*c == 'S')
+            return directionEl::S;
+        else
+            throw std::logic_error("Ungültige Richtung (Elevation)!");
+    };
+
+    char number{65 /* A */};
+    while (std::getline(file, input))
     {
-        // Schreibt in die Konsole:
-        const auto write = [](std::string str) -> void {
-            std::cout << str;
-        };
+        if (input.at(0) == '#') // Kommentare (beginnen mit #) überspringen
+            continue;
 
-        // Liest aus Konsole in Variable ein (Referenz!):
-        const auto read = [](auto &var) -> void {
-            std::cin >> var;
-        };
+        // Hier Zeile aufsplitten:
+        
+        const auto n1{input.find(',')};
+        const auto n2{input.find(',', n1 + 1)};
 
-        // Prüft, ob Wert innerhalb eines Intervals liegt:
-        const auto cond = [](const auto min, const auto max, const auto value) noexcept -> bool {
-            if (value >= min && value <= max)
-                return true;
-            else
-                return false;
-        };
+        const std::string Breitengrad{input.substr(0, n1)};
+        const std::string Laengengrad{input.substr(n1+2, n2 - n1 - 1)};
+        const std::string Bezeichnung{input.substr(n2 + 1, input.length())};
 
-        // Wandelt einen char in entsprechende Richtung um (Azimut):
-        const auto retDirAz = [](const char c) -> directionAz {
-            if (c == 'W')
-                return directionAz::W;
-            else if (c == 'O')
-                return directionAz::O;
-            else
-                throw std::logic_error("ERROR!");
-        };
+        const std::regex split("\\s");
 
-        // Wandelt einen char in entsprechende Richtung um (Elevation):
-        const auto retDirEl = [](const char c) -> directionEl {
-            if (c == 'N')
-                return directionEl::N;
-            else if (c == 'S')
-                return directionEl::S;
-            else 
-                throw std::logic_error("ERROR!");
-        };
+        // Breitengrad untersuchen:
+        const std::vector<std::string> resultB{
+            std::sregex_token_iterator(Breitengrad.begin(), Breitengrad.end(), split, -1), {}};
 
-        // Temporäre Container für Einleseprozess aus Konsole:
-        std::array<int16_t, ANZAHL * 2> _angle;
-        std::array<uint8_t, ANZAHL * 2> _min;
-        std::array<uint8_t, ANZAHL * 2> _sec;
-        std::array<directionAz, ANZAHL * 2> _dirAz;
-        std::array<directionEl, ANZAHL * 2> _dirEl;
+        // Längengrad untersuchen:
+        const std::vector<std::string> resultL{
+            std::sregex_token_iterator(Laengengrad.begin(), Laengengrad.end(), split, -1), {}};
 
-        char c;
-
-        // Jedes Koordinatentupel enthält Längen- und Breitengrad:
-        for (size_t i{0}; i < ANZAHL; i++)
-            for (size_t f{0}; f < 2; f++)
-            {
-                if (f == 0)
-                { // Längengrad
-                    write("Längengrad:\n");
-                    write("\tWinkel: ");
-                    read(_angle[i + f]);
-                    write("\r\tMinuten: ");
-                    read(_min[i + f]);
-                    write("\r\tSekunden: ");
-                    read(_sec[i + f]);
-                    write("\r\tRichtung: ");
-                    read(c);
-                    _dirAz[i + f] = retDirAz(c);
-                }
-                else
-                {
-                    write("Breitengrad:\n");
-                    write("\tWinkel: ");
-                    read(_angle[i + f]);
-                    write("\r\tMinuten: ");
-                    read(_min[i + f]);
-                    write("\r\tSekunden: ");
-                    read(_sec[i + f]);
-                    write("\r\tRichtung: ");
-                    read(c);
-                    _dirEl[i + f] = retDirEl(c);
-                }
-            }
+        coords.push_back(Coordinate{static_cast<uint16_t>(std::atoi(resultB[0].c_str())),
+                                    static_cast<uint8_t>(std::atoi(resultB[1].c_str())),
+                                    static_cast<uint8_t>(std::atoi(resultB[2].c_str())),
+                                    retDirEl(resultB[3].c_str()),
+                                    static_cast<uint16_t>(std::atoi(resultL[0].c_str())),
+                                    static_cast<uint8_t>(std::atoi(resultL[1].c_str())),
+                                    static_cast<uint8_t>(std::atoi(resultL[2].c_str())),
+                                    retDirAz(resultL[3].c_str()),
+                                    Bezeichnung,
+                                    number++});
     }
+
+
+    for(auto elem : coords)
+        elem.print();
+
+    
+
+    const auto& ref {getKoordinate(coords, 'A')};
+    const auto& ref2 {getKoordinate(coords, 'B')};
+
+    const auto zentri {getZentriwinkel(ref, ref2)};
+
+    std::cout << "Entfernung: " << getStrecke(zentri) << std::endl;
 }
