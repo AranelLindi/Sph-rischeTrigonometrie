@@ -97,9 +97,9 @@ struct Coordinate
     void print(void) const noexcept
     {
         std::cout << no << ".) " << name << '\n';
-        std::cout << "\t\u03A6: ";
+        std::cout << "\t\u03A6: "; // phi
         phi.print();
-        std::cout << "\t\u03BB: ";
+        std::cout << "\t\u03BB: "; // lambda
         lambda.print();
         std::cout << '\n'
                   << std::endl;
@@ -120,7 +120,7 @@ inline float rad2deg(float angle)
 inline float getAngle(const AngleAz &angle) noexcept
 {
     const auto calc{deg2rad(angle.angle + (angle.min / 60.0f) + (angle.sec / 3600.0f))};
-    return (angle.dir == directionAz::O) ? (-1 * calc) : calc;
+    return (angle.dir == directionAz::W) ? (-1 * calc) : calc;
 }
 
 // Liefert Winkel als Dezimalzahl im Bogenmaß
@@ -129,6 +129,7 @@ inline float getAngle(const AngleEl &angle) noexcept
     const auto calc{deg2rad(angle.angle + (angle.min / 60.0f) + (angle.sec / 3600.0f))}; // Winkel in Grad
     return (angle.dir == directionEl::S) ? (-1 * calc) : calc;
 }
+
 // Gibt Winkel zwischen zwei Punkten auf der Kugel zurück (Zentriwinkel)
 float getCentricAngle(const Coordinate &a, const Coordinate &b) noexcept
 {
@@ -147,6 +148,23 @@ float getCentricAngle(const Coordinate &a, const Coordinate &b) noexcept
     return zeta;
 }
 
+// Berechnet, ob Koordinate b westlich oder östlich von a liegt (relativ!)
+directionAz calcHemmisphere(const Coordinate &a, const Coordinate &b)
+{
+    const auto lambda_a{getAngle(a.lambda)};
+    const auto lambda_b{getAngle(b.lambda)};
+
+    // Achtung: Für spätere Code-Reviews:
+    // die folgende If-Abfrage macht vermutlich auf den ersten Blick keinen Sinn,
+    // da Westen und Osten vertauscht sind. Dies hat damit zu tun, dass nach Programm-
+    // definition, westliche Koordinaten in Gleitkommazahl geschrieben mit negativem
+    // Vorzeichen behaftet sind.
+    // Würde West positiv und Ost negativ definiert, müssten West und Ost hier wieder
+    // vertauscht sein und es ergäbe intuitiv mehr Sinn.
+
+    return (lambda_b > lambda_a) & (lambda_b < (lambda_a + M_PI)) ? directionAz::O : directionAz::W;
+}
+
 // Gibt Kurswinkel zurück: Winkel zwischen Nordrichtung und Südrichtung, zeta im Bogenmaß!
 float getHeadingAngle(const struct Coordinate &a, const struct Coordinate &b)
 {
@@ -156,14 +174,18 @@ float getHeadingAngle(const struct Coordinate &a, const struct Coordinate &b)
         throw std::overflow_error("Division durch Null!"); // Division durch Null abfangen
 
     const auto phi_a{getAngle(a.phi)};
+    const auto lambda_a{getAngle(a.lambda)};
+
     const auto phi_b{getAngle(b.phi)};
+    const auto lambda_b{getAngle(b.lambda)};
 
-    const auto angle{
-        acosf((sinf(phi_b) - sinf(phi_a) * cosf(zeta)) / (cosf(phi_a) * sinf(zeta)))
-        /* Vorsicht: Division durch Null möglich! */
-    };
+    // Prüft, auf welcher Hemisphäre sich der zweite Punkt befindet
+    const auto Hemmisphere{calcHemmisphere(a, b)};
 
-    return angle;
+    if (Hemmisphere == directionAz::W)
+        return (2 * M_PI - acosf((sinf(phi_b) - sinf(phi_a) * cosf(zeta)) / (cosf(phi_a) * sinf(zeta)))); // 360 Grad - alpha
+    else
+        return acosf((sinf(phi_b) - sinf(phi_a) * cosf(zeta)) / (cosf(phi_a) * sinf(zeta))); // alpha
 }
 
 // Gibt Strecke des Winkels zurück (Orthodrom!)
@@ -173,34 +195,65 @@ float getRouteLength(float zentriwinkel) noexcept
 }
 
 // Gibt den nördlichsten Punkt auf einem Großkreis zurück
-Coordinate getNorthernmostPoint(const Coordinate &a, float kurswinkel)
+Coordinate getNorthernmostPoint(const Coordinate &a, const Coordinate &b)
 {
-    // Ausgangspunkt:
+    // Gegeben: A und alpha
+    // A
     const auto phi_a{getAngle(a.phi)};
     const auto lambda_a{getAngle(a.lambda)};
-    // Breitengrad nördlichster Punkt:
-    const auto phi_n{acosf(sinf(kurswinkel) * cosf(phi_a))};
-    // Längengrad nördlichster Punkt:
-    const auto lambda_n{asinf(cosf(kurswinkel) / sinf(phi_n)) + lambda_a};
+    // alpha
+    const auto abflugwinkel{getHeadingAngle(a, b)};                                                         // Kurswinkel
+    const auto alpha{(calcHemmisphere(a, b) == directionAz::W ? (2 * M_PI) - abflugwinkel : abflugwinkel)}; // Kurswinkel entspricht nicht zwangsläufig dem Innenwinkel Alpha! (Nur wenn der Zielpunkt östlich vom Anfangspunkt liegt!)
 
-    // Liefert Nachkommastellen einer Gleitkommazahl:
-    const auto getFraction = [](double d) -> float {
-        double frac{0.0};
-        const auto num = std::modf(d, &frac);
-        return num;
+    // Auf Sonderfall prüfen:
+    {
+        if (lambda_a == getAngle(b.lambda)) // Sonderfall: Orthodrom == Meridian: Alle Punkte auf Großkreis haben gleichen Längengrad & Großkr. geht durch Nordpol, damit ist der nördlichste Scheitelpunkt der Nordpol selbst.
+            return Coordinate{90, 0, 0, directionEl::N, 0, 0, 0, directionAz::O, "Nordpol", 0};
+    }
+
+    // Scheitelpunkt s
+    const auto phi_s {fabs(acos(sin(alpha)*cos(phi_a)))};
+    const auto lambda_s {lambda_a+atan(1/(sin(phi_a)*tan(alpha)))};
+
+    // Sowohl Längen- als auch Breitengrad des Scheitelpunkts sind ohne Vorzeichen, somit ist eine Bestimmung der Halbkugel nicht direkt möglich.
+    // Es wird der selbstausgedachte Trick angewandt, dass die Breitengrade der beiden Punkte a und b verglichen werden und die Halbkugel so bestimmt wird:
+    // wird der dem Norden am nächsten gelegene Punkt als Startpunkt a verwendet, wird eben jener Punkt berechnet, analog gilt dies augenscheinlich für
+    // den südlicheren Punkt der beiden:
+    const directionEl dEl{ (phi_a > getAngle(b.phi) ? directionEl::N : directionEl::S)};
+    const directionAz dAz{a.lambda.dir}; // Längengrad wird einfach übernommen, hat bei allen Tests gestimmt
+
+    // Lambda um Nachkommastellen zu extrahieren:
+    const auto getFraction = [](float d) -> float {
+        float integral;
+        const auto frac {std::fmod(d, integral)};
+        return frac;
     };
 
-    const directionEl dEl{(phi_n < 0) ? directionEl::S : directionEl::N};
-    const directionAz dAz{(lambda_n < 0) ? directionAz::O : directionAz::W};
-
     // Mit Nachkommastellen, Minuten und Sekunden der zwei Winkel berechnen:
-    const auto phi_frac_min{getFraction(rad2deg(fabs(phi_n))) * 60.0f};
+    const auto phi_frac_min{getFraction(rad2deg(fabs(phi_s))) * 60.0f};
     const auto phi_frac_sec{getFraction(phi_frac_min) * 60.0f};
 
-    const auto lambda_frac_min{getFraction(rad2deg(fabs(lambda_n))) * 60.0f};
+    const auto lambda_frac_min{getFraction(rad2deg(fabs(lambda_s))) * 60.0f};
     const auto lambda_frac_sec{getFraction(lambda_frac_min) * 60.0f};
 
-    return Coordinate(static_cast<uint16_t>(rad2deg(fabs(phi_n))), static_cast<uint8_t>(phi_frac_min), static_cast<uint8_t>(phi_frac_sec), dEl, static_cast<uint8_t>(rad2deg(fabs(lambda_n))), static_cast<uint8_t>(lambda_frac_min), static_cast<uint8_t>(lambda_frac_sec), dAz, "Nördlichster Punkt", '#');
+    return Coordinate(static_cast<uint16_t>(rad2deg(fabs(phi_s))),
+                      static_cast<uint8_t>(phi_frac_min),
+                      static_cast<uint8_t>(phi_frac_sec),
+                      dEl,
+                      static_cast<uint8_t>(rad2deg(fabs(lambda_s))),
+                      static_cast<uint8_t>(lambda_frac_min),
+                      static_cast<uint8_t>(lambda_frac_sec),
+                      dAz,
+                      "Nördlichster Punkt",
+                      0); /* Soll intuitiv eindeutig sein, dass die Koordinatenangabe nicht als Parameter verwendet werden kann */
+}
+
+// Berechnet Zwischenpunkt auf Großkreis
+Coordinate getIntermediatePoint(const Coordinate&a, const Coordinate&b, float speed, float fuel, float rate, bool interval) {
+    const auto s {getNorthernmostPoint(a, b)}; // Scheitelpunkt
+
+    const auto time {fuel/rate}; // So lange reicht der Treibstoff [h]
+    const auto range {speed*time}; // So weit kommt man [km]
 }
 
 // Gibt eine Koordinate aus der Sammlung zurück, die das entsprechende Index trägt:
@@ -223,19 +276,19 @@ void printCentricAngle(const Coordinate &a, const Coordinate &b) noexcept // Zen
 void printNorthernmostPoint(const Coordinate &a, const Coordinate &b) noexcept
 {
     std::cout << "Nördlichster Punkt auf Großkreis von " << a.name << " nach " << b.name << ":\n";
-    getNorthernmostPoint(a, getHeadingAngle(a, b)).print();
+    getNorthernmostPoint(a, b).print();
 
     const auto abflugswinkel{rad2deg(getHeadingAngle(a, b))};
     const auto anflugswinkel{rad2deg(getHeadingAngle(b, a))};
 
-    const auto fallunterscheidung = [abflugswinkel, anflugswinkel, a, b]() -> void {
+    const auto fallunterscheidung = [&abflugswinkel, &anflugswinkel, &a, &b]() -> void {
         std::cout << "Lage des Scheitelpunkts: ";
-        if (((abflugswinkel > 0.0f) & (abflugswinkel < 90.0f)) & ((anflugswinkel > 0.0f) & (anflugswinkel < 90.0f)))
-            std::cout << "innerhalb des Bogens " << a.no << b.no << std::endl;
-        else if (((abflugswinkel > 90.0f) & (abflugswinkel < 180.0f)) & ((anflugswinkel > 0.0f) & (anflugswinkel < 90.0f)))
-            std::cout << "vor " << a.no << std::endl;
-        else if (((abflugswinkel > 0.0f) & (abflugswinkel < 90.0f)) & ((anflugswinkel > 90.0f) & (anflugswinkel < 180.0f)))
-            std::cout << "hinter " << b.no << std::endl;
+        if (((abflugswinkel > 0.0f) && (abflugswinkel < 90.0f)) && ((anflugswinkel > 0.0f) && (anflugswinkel < 90.0f)))
+            std::cout << "innerhalb des Bogens " << a.no << b.no << "." << std::endl;
+        else if (((abflugswinkel > 90.0f) && (abflugswinkel < 180.0f)) && ((anflugswinkel > 0.0f) && (anflugswinkel < 90.0f)))
+            std::cout << "vor " << a.no << " (" << a.name << ")." << std::endl;
+        else if (((abflugswinkel > 0.0f) && (abflugswinkel < 90.0f)) && ((anflugswinkel > 90.0f) && (anflugswinkel < 180.0f)))
+            std::cout << "hinter " << b.no << " (" << b.name << ")." << std::endl;
     };
 
     // Ausgeben, wo sich der Scheitelpunkt grob befindet:
@@ -285,19 +338,6 @@ int main(void)
         std::cout << str;
     };
 
-    // Liest aus Konsole in Variable ein (Referenz!):
-    const auto read = [](auto &var) -> void {
-        std::cin >> var;
-    };
-
-    // Prüft, ob Wert innerhalb eines Intervals liegt:
-    const auto cond = [](const auto min, const auto max, const auto value) noexcept -> bool {
-        if (value >= min && value <= max)
-            return true;
-        else
-            return false;
-    };
-
     // Wandelt einen char in entsprechende Richtung um (Azimut):
     const auto retDirAz = [](const char *c) -> directionAz {
         if (*c == 'W')
@@ -324,10 +364,11 @@ int main(void)
 
     uint8_t counter{1}; // Zähler für Zeilen
 
-    while (std::getline(file, input))
+    try
     {
-        try
+        while (std::getline(file, input))
         {
+
             if (input.at(0) == '#') // Kommentare (beginnen mit #) überspringen, nur am Zeilenanfang möglich!
                 continue;
 
@@ -357,13 +398,14 @@ int main(void)
                                         retDirAz(resultL[3].c_str()),
                                         Bezeichnung,
                                         number++});
+
+            counter++;
         }
-        catch (const std::exception &ex)
-        {
-            std::cerr << "Einlesefehler in Zeile " << static_cast<uint32_t>(counter) << '!' << std::endl;
-            return 1;
-        }
-        counter++;
+    }
+    catch (const std::exception &ex)
+    {
+        std::cerr << "Einlesefehler in Zeile " << static_cast<uint32_t>(counter) << '!' << std::endl;
+        return 1;
     }
 
     // Alle eingelesenen Koordinaten anzeigen:
@@ -401,29 +443,29 @@ int main(void)
             if (cmd == 0)
                 break;
 
-            const auto param1{getCoordinate(coords, static_cast<uint8_t>(userEingabe[1].c_str()[0]))};
-            const auto param2{getCoordinate(coords, static_cast<uint8_t>(userEingabe[2].c_str()[0]))};
+            const auto A{getCoordinate(coords, static_cast<uint8_t>(userEingabe[1].c_str()[0]))};
+            const auto B{getCoordinate(coords, static_cast<uint8_t>(userEingabe[2].c_str()[0]))};
 
             switch (cmd)
             {
             case 1:
-                printCentricAngle(param1, param2);
+                printCentricAngle(A, B);
                 break;
             case 2:
-                printHeadingAngle(param1, param2);
+                printHeadingAngle(A, B);
                 break;
             case 3:
-                printNorthernmostPoint(param1, param2);
+                printNorthernmostPoint(A, B);
                 break;
             case 4:
-                printRouteLength(param1, param2);
+                printRouteLength(A, B);
                 break;
             case 5:
-                const auto param3{std::atof(userEingabe[3].c_str())}; // Geschwindigkeit in km/h
-                const auto param4{std::atof(userEingabe[4].c_str())}; // Treibstoff in t
-                const auto param5{std::atoi(userEingabe[5].c_str())}; // Punkt im Intervall von a und b oder außerhalb des Intervalls
+                const auto Speed{std::atof(userEingabe[3].c_str())};     // Geschwindigkeit in km/h
+                const auto Fuel{std::atof(userEingabe[4].c_str())};      // Treibstoff in t
+                const auto Intervall{std::atoi(userEingabe[5].c_str())}; // darf sich nur im Intervall (true) oder auf ganzem Großkreis bewegen
 
-                const auto distance{getRouteLength(getCentricAngle(param1, param2))};
+                const auto distance{getRouteLength(getCentricAngle(A, B))};
 
                 break;
             }
