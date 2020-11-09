@@ -1,7 +1,7 @@
 # Format:
-## Breitengrad: [Winkel] [Minute] [Sekunde] [Richtung],
-## Längengrad: [Winkel] [Minute] [Sekunde] [Richtung],
-## Bezeichnung: Optional, beliebige Länge
+## 1. Breitengrad: [Winkel] [Minute] [Sekunde] [Richtung],
+## 2. Längengrad: [Winkel] [Minute] [Sekunde] [Richtung],
+## 3. Bezeichnung: Optional, beliebige Länge ohne Zeilenumbruch
 #
 # Wichtig! Es müssen alle drei Werte angegeben werden
 49 47 38 N, 9 57 4 O, Würzburg

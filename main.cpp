@@ -16,19 +16,19 @@
 #define InputFile "in.txt"
 
 /// Globale Variablen
-const auto r_E{6371};              // Erdradius in [km]
+const auto r_E{6371.0f};           // Erdradius in [km]
 constexpr auto rad{M_PI / 180.0f}; // Radiant (1 Grad = 180 Grad / pi)
 
 /// Strukturen
 // Richtung Elevation-Winkel (Nord/Süd):
-enum class directionEl
+enum class directionEl // Definition: Nord: 90 Grad bis 0 Grad, Süd: 0 Grad bis -90 Grad
 {
     N,
     S
 };
 
 // Richtung Azimut-Winkel (West/Ost):
-enum class directionAz
+enum class directionAz // Definition: West: -180 Grad bis 0 Grad; Ost: 0 Grad bis 180 Grad
 {
     W,
     O
@@ -54,7 +54,7 @@ struct AngleEl : Angle
 {
     const directionEl dir;
 
-    AngleEl(uint16_t _angle, uint8_t _min, uint8_t _sec, directionEl _dir) : Angle(_angle, _min, _sec), dir(_dir) {}
+    AngleEl(uint16_t _angle, uint8_t _min, uint8_t _sec, directionEl _dir) : Angle(_angle, _min, _sec), dir(_dir) {} // Konstruktor
 
     void print(void) const noexcept
     {
@@ -71,7 +71,7 @@ struct AngleAz : Angle
 {
     const directionAz dir;
 
-    AngleAz(uint16_t _angle, uint8_t _min, uint8_t _sec, directionAz _dir) : Angle(_angle, _min, _sec), dir(_dir) {}
+    AngleAz(uint16_t _angle, uint8_t _min, uint8_t _sec, directionAz _dir) : Angle(_angle, _min, _sec), dir(_dir) {} // Konstruktor
 
     void print(void) const noexcept
     {
@@ -87,10 +87,10 @@ struct Coordinate
 {
     const AngleEl phi;      // Breitengrad
     const AngleAz lambda;   // Längengrad
-    const int8_t no;        // fortlaufende Nummer/Buchstabe
+    const int8_t no;        // fortlaufende Nummer/Buchstabe (wird als Referenz für Programmparameter genutzt)
     const std::string name; // Bezeichner aus .txt-Datei
 
-    Coordinate(uint16_t phi_angle, uint8_t phi_min, uint8_t phi_sec, directionEl phi_dir, uint16_t lambda_angle, uint8_t lambda_min, uint8_t lambda_sec, directionAz lambda_dir, const std::string &bez, int8_t _no) : phi(phi_angle, phi_min, phi_sec, phi_dir), lambda(lambda_angle, lambda_min, lambda_sec, lambda_dir), name(bez), no(_no)
+    Coordinate(uint16_t phi_angle, uint8_t phi_min, uint8_t phi_sec, directionEl phi_dir, uint16_t lambda_angle, uint8_t lambda_min, uint8_t lambda_sec, directionAz lambda_dir, const std::string &bez, int8_t _no) : phi(phi_angle, phi_min, phi_sec, phi_dir), lambda(lambda_angle, lambda_min, lambda_sec, lambda_dir), name(bez), no(_no) // Konstruktor
     {
     }
 
@@ -106,12 +106,12 @@ struct Coordinate
     }
 };
 
-inline float deg2rad(float angle)
+inline float deg2rad(float angle) noexcept
 {
     return (angle * M_PI / 180.0f);
 }
 
-inline float rad2deg(float angle)
+inline float rad2deg(float angle) noexcept
 {
     return (angle * 180.0f / M_PI);
 }
@@ -130,6 +130,11 @@ inline float getAngle(const AngleEl &angle) noexcept
     return (angle.dir == directionEl::S) ? (-1 * calc) : calc;
 }
 
+// Berechnet den Loxodromischen Kurs von A nach B
+float getLoxodromicCourse(const Coordinate &a, const Coordinate &b)
+{
+}
+
 // Gibt Winkel zwischen zwei Punkten auf der Kugel zurück (Zentriwinkel)
 float getCentricAngle(const Coordinate &a, const Coordinate &b) noexcept
 {
@@ -140,16 +145,12 @@ float getCentricAngle(const Coordinate &a, const Coordinate &b) noexcept
     const auto lambda_b{getAngle(b.lambda)};
 
     // Zentriwinkel:
-    const auto zeta{
-        acosf(sinf(phi_a) * sinf(phi_b) + cosf(phi_a) * cosf(phi_b) * cosf(lambda_b - lambda_a))
-        /* Trigon. Fkt. in C++ verwenden ihren Parameter in Bogenmaß, deshalb hier noch umrechnen (* rad). Für acosf nicht nötig, da Wert bereits im Bogenmaß! */
-    };
-
-    return zeta;
+    return acosf(sinf(phi_a) * sinf(phi_b) + cosf(phi_a) * cosf(phi_b) * cosf(lambda_b - lambda_a));
+    /* Trigon. Fkt. in C++ verwenden ihren Parameter in Bogenmaß, deshalb hier noch umrechnen (* rad). Für acosf nicht nötig, da Wert bereits im Bogenmaß! */
 }
 
 // Berechnet, ob Koordinate b westlich oder östlich von a liegt (relativ!)
-directionAz calcHemmisphere(const Coordinate &a, const Coordinate &b)
+inline directionAz calcHemmisphere(const Coordinate &a, const Coordinate &b) noexcept
 {
     const auto lambda_a{getAngle(a.lambda)};
     const auto lambda_b{getAngle(b.lambda)};
@@ -180,16 +181,14 @@ float getHeadingAngle(const struct Coordinate &a, const struct Coordinate &b)
     const auto lambda_b{getAngle(b.lambda)};
 
     // Prüft, auf welcher Hemisphäre sich der zweite Punkt befindet
-    const auto Hemmisphere{calcHemmisphere(a, b)};
-
-    if (Hemmisphere == directionAz::W)
+    if (calcHemmisphere(a, b) == directionAz::W)
         return (2 * M_PI - acosf((sinf(phi_b) - sinf(phi_a) * cosf(zeta)) / (cosf(phi_a) * sinf(zeta)))); // 360 Grad - alpha
     else
         return acosf((sinf(phi_b) - sinf(phi_a) * cosf(zeta)) / (cosf(phi_a) * sinf(zeta))); // alpha
 }
 
 // Gibt Strecke des Winkels zurück (Orthodrom!)
-float getRouteLength(float zentriwinkel) noexcept
+inline float getRouteLength(float zentriwinkel) noexcept
 {
     return (zentriwinkel * r_E);
 }
@@ -212,20 +211,20 @@ Coordinate getNorthernmostPoint(const Coordinate &a, const Coordinate &b)
     }
 
     // Scheitelpunkt s
-    const auto phi_s {fabs(acos(sin(alpha)*cos(phi_a)))};
-    const auto lambda_s {lambda_a+atan(1/(sin(phi_a)*tan(alpha)))};
+    const auto phi_s{fabs(acos(sin(alpha) * cos(phi_a)))};
+    const auto lambda_s{lambda_a + atan(1 / (sin(phi_a) * tan(alpha)))};
 
     // Sowohl Längen- als auch Breitengrad des Scheitelpunkts sind ohne Vorzeichen, somit ist eine Bestimmung der Halbkugel nicht direkt möglich.
     // Es wird der selbstausgedachte Trick angewandt, dass die Breitengrade der beiden Punkte a und b verglichen werden und die Halbkugel so bestimmt wird:
     // wird der dem Norden am nächsten gelegene Punkt als Startpunkt a verwendet, wird eben jener Punkt berechnet, analog gilt dies augenscheinlich für
     // den südlicheren Punkt der beiden:
-    const directionEl dEl{ (phi_a > getAngle(b.phi) ? directionEl::N : directionEl::S)};
+    const directionEl dEl{(phi_a > getAngle(b.phi) ? directionEl::N : directionEl::S)};
     const directionAz dAz{a.lambda.dir}; // Längengrad wird einfach übernommen, hat bei allen Tests gestimmt
 
     // Lambda um Nachkommastellen zu extrahieren:
     const auto getFraction = [](float d) -> float {
         float integral;
-        const auto frac {std::fmod(d, integral)};
+        const auto frac{std::fmod(d, integral)};
         return frac;
     };
 
@@ -249,11 +248,33 @@ Coordinate getNorthernmostPoint(const Coordinate &a, const Coordinate &b)
 }
 
 // Berechnet Zwischenpunkt auf Großkreis
-Coordinate getIntermediatePoint(const Coordinate&a, const Coordinate&b, float speed, float fuel, float rate, bool interval) {
-    const auto s {getNorthernmostPoint(a, b)}; // Scheitelpunkt
+Coordinate getIntermediatePoint(const Coordinate &a, const Coordinate &b, float speed, float fuel, float rate, bool interval)
+{
+    const auto s{getNorthernmostPoint(a, b)}; // Scheitelpunkt
 
-    const auto time {fuel/rate}; // So lange reicht der Treibstoff [h]
-    const auto range {speed*time}; // So weit kommt man [km]
+    const auto time{fuel / rate};   // So lange reicht der Treibstoff [h]
+    const auto range{speed * time}; // So weit kommt man [km]
+
+    const auto distance{getRouteLength(getCentricAngle(a, b))}; // Strecke von A nach B
+
+    // Annahme: Bewegung von A in Richtung B!
+    const auto calcDelta = [interval, range, distance]() -> double {
+        if (interval)
+        {                                               // Quasi wie hin und hergeschossener Ball: Bewegt sich nur im Intervall AB
+            const auto prop{range / distance};          // >1: Bewegung über Punkt B hinaus (zurück oder weiter je nach [interval]); <1: Bewegung im Interval [A,B)
+            float integral;                             // nicht benötigt
+            const auto frac{std::fmod(prop, integral)}; // Nachkommastellen des Verhältnisses
+
+            if ((static_cast<uint32_t>(prop)) % 2) // Zahl ist ungerade: von A ausgehend
+                return frac;
+            else // Zahl ist gerade: von B ausgehend
+                return 1 - frac;
+        }
+        else                         // fliegt - sofern Reichweite ausreicht - über B hinaus
+            return range / distance; // einfaches Streckenverhältnis zurückgeben
+    };
+    const auto delta{calcDelta()};
+    const auto c{delta * distance}; // c von A ausgehend
 }
 
 // Gibt eine Koordinate aus der Sammlung zurück, die das entsprechende Index trägt:
@@ -267,12 +288,19 @@ Coordinate getCoordinate(const std::vector<Coordinate> &coords, uint8_t i)
     throw std::logic_error("Kein zugehöriges Koordinatenobjekt gefunden!");
 }
 
-void printCentricAngle(const Coordinate &a, const Coordinate &b) noexcept // Zentriwinkel
+// Gibt den loxodromischen Kurs von A nach B auf Konsole aus:
+inline void printLoxodromicCourse(const Coordinate &a, const Coordinate &b) noexcept
+{
+    std::cout << "Loxodromischer Kurs von " << a.name << " nach " << b.name << " beträgt:\t" << std::setprecision(4) << rad2deg(getLoxodromicCourse(a, b)) << " Grad" << std::endl;
+}
+
+// Gibt den Zentriwinkel zwischen A und B auf Konsole aus:
+inline void printCentricAngle(const Coordinate &a, const Coordinate &b) noexcept // Zentriwinkel
 {
     std::cout << "Zentriwinkel zwischen " << a.name << " und " << b.name << " beträgt:\t" << std::setprecision(4) << rad2deg(getCentricAngle(a, b)) << " Grad" << std::endl;
 }
 
-// Berechnet den Scheitelpunkt auf einem Großkreis:
+// Gibt den Scheitelpunkt auf einem Großkreis aus:
 void printNorthernmostPoint(const Coordinate &a, const Coordinate &b) noexcept
 {
     std::cout << "Nördlichster Punkt auf Großkreis von " << a.name << " nach " << b.name << ":\n";
@@ -297,12 +325,12 @@ void printNorthernmostPoint(const Coordinate &a, const Coordinate &b) noexcept
     std::cout << std::endl;
 }
 
-void printHeadingAngle(const Coordinate &a, const Coordinate &b) noexcept // Kurswinkel
+inline void printHeadingAngle(const Coordinate &a, const Coordinate &b) noexcept // Kurswinkel
 {
     std::cout << "Kurswinkel auf Großkreis von " << a.name << " nach " << b.name << ":\t" << std::setprecision(4) << rad2deg(getHeadingAngle(a, b)) << " Grad" << std::endl;
 }
 
-void printRouteLength(const Coordinate &a, const Coordinate &b) noexcept
+inline void printRouteLength(const Coordinate &a, const Coordinate &b) noexcept
 {
     std::cout << "Strecke von " << a.name << " nach " << b.name << ":\t" << std::setprecision(5) << getRouteLength(getCentricAngle(a, b)) << " km" << std::endl;
 }
@@ -318,10 +346,9 @@ int main(void)
               << "  Daten werden aus '" << InputFile << "' eingelesen...\n"
               << std::endl;
 
+    // Koordinaten aus Datei einlesen:
     std::ifstream file;
-
     file.open(InputFile);
-
     if (!file)
     {
         throw std::runtime_error("Input-Datei ist fehlerhaft bzw. existiert nicht.");
@@ -416,11 +443,12 @@ int main(void)
     write("********************************************\n");
 
     // Mögliche Operationen posten
-    write("1: Zentriwinkel berechnen:\t[BezKoord] [BezKoord]\n");
-    write("2: Kurswinkel berechnen:\t[BezKoord] [BezKoord]\n");
-    write("3: Scheitelpunkt berechnen:\t[BezKoord] [BezKoord]\n");
-    write("4: Streckenlänge berechnen:\t[BezKoord] [BezKoord]\n");
-    write("5: Zwischenpunkt berechnen:\t[BezKoord] [BezKoord] [Geschw_Double] [Treibstoff_Double] [Interval_Bool 1/0]\n");
+    write("Zentriwinkel berechnen: \t1 [BezKoord] [BezKoord]\n");
+    write("Kurswinkel berechnen: \t2 [BezKoord] [BezKoord]\n");
+    write("Scheitelpunkt berechnen: \t3 [BezKoord] [BezKoord]\n");
+    write("Streckenlänge berechnen: \t4 [BezKoord] [BezKoord]\n");
+    write("Loxodromischen Kurs berechnen: \t5 [BezKoord] [BezKoord]");
+    write("Zwischenpunkt berechnen: \t6 [BezKoord] [BezKoord] [Geschw_Double] [Treibstoff_Double] [Interval_Bool 1/0]\n");
     write("\n");
     write("0 == exit\n\n");
 
@@ -428,7 +456,6 @@ int main(void)
 
     do
     {
-
         // Benutzereingabe einlesen:
         std::getline(std::cin, cinput);
 
@@ -461,6 +488,9 @@ int main(void)
                 printRouteLength(A, B);
                 break;
             case 5:
+                printLoxodromicCourse(A, B);
+                break;
+            case 6:
                 const auto Speed{std::atof(userEingabe[3].c_str())};     // Geschwindigkeit in km/h
                 const auto Fuel{std::atof(userEingabe[4].c_str())};      // Treibstoff in t
                 const auto Intervall{std::atoi(userEingabe[5].c_str())}; // darf sich nur im Intervall (true) oder auf ganzem Großkreis bewegen
@@ -476,25 +506,5 @@ int main(void)
             continue;
         }
     } while (1);
-
-    //const auto &ref{getCoordinate(coords, 'A')};
-    //const auto &ref2{getCoordinate(coords, 'B')};
-
-    //const auto zentri{getCentricAngle(ref, ref2)};
-
-    //std::cout << "Zentriwinkel: " << zentri << std::endl;
-    //std::cout << "Entfernung: " << getRouteLength(zentri) << std::endl;
-    //std::cout << "Kurswinkel: " << getKurswinkel(ref, ref2, zentri) << std::endl;
-
-    // Mögliche Berechnungen:
-    // 1.) Entfernung zwischen zwei Koordinaten
-    // 1.1.) Zentriwinkel berechnen getCentricAngle()
-    // 1.2.) Strecke berechnen getRouteLength()
-    //
-    // 2.) Nördlichster Punkt auf einem Großkreis berechnen
-    // 2.1.) Zentriwinkel berechnen getCentricAngle()
-    // 2.2.) Kurswinkel berechnen getHeadingAngle()
-    // 2.3.) Nördlichster Punkt berechnen getNorthernmostPoint()
-    //
-    //
+    std::cout << std::endl;
 }
