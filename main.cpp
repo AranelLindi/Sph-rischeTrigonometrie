@@ -131,8 +131,14 @@ inline float getAngle(const AngleEl &angle) noexcept
 }
 
 // Berechnet den Loxodromischen Kurs von A nach B
-float getLoxodromicCourse(const Coordinate &a, const Coordinate &b)
+inline float getLoxodromicCourse(const Coordinate &a, const Coordinate &b)
 {
+    // sigma von phi: [sigma](phi) = [ln(tan(pi/4 + phi/2))] von phi bis 0 (gilt nur für e = 0 (Kugel!))
+    const auto sigma = [](float phi) {
+        return logf(tan(M_PI / 4 + phi / 2));
+    };
+
+    return atan((getAngle(b.lambda) - getAngle(a.lambda)) / (sigma(getAngle(b.phi)) - sigma(getAngle(a.phi))));
 }
 
 // Gibt Winkel zwischen zwei Punkten auf der Kugel zurück (Zentriwinkel)
@@ -396,8 +402,10 @@ int main(void)
         while (std::getline(file, input))
         {
 
-            if (input.at(0) == '#') // Kommentare (beginnen mit #) überspringen, nur am Zeilenanfang möglich!
+            if (input.at(0) == '#'){ // Kommentare (beginnen mit #) überspringen, nur am Zeilenanfang möglich!
+                counter++; // Auch bei Kommentaren Zeilen mitzählen, damit bei Fehlerausgabe exakte Zeilennummer ausgegeben wird
                 continue;
+            }
 
             // Hier Zeile aufsplitten:
             const auto n1{input.find(',')};
@@ -439,16 +447,16 @@ int main(void)
     for (auto elem : coords)
         elem.print();
 
-    write("\nBitte Funktionscode mit Parametern eingeben:\n");
+    write("\nBitte Funktionscode mit Parametern eingeben: (z.B. 1 A B)\n");
     write("********************************************\n");
 
     // Mögliche Operationen posten
-    write("Zentriwinkel berechnen: \t1 [BezKoord] [BezKoord]\n");
-    write("Kurswinkel berechnen: \t2 [BezKoord] [BezKoord]\n");
-    write("Scheitelpunkt berechnen: \t3 [BezKoord] [BezKoord]\n");
-    write("Streckenlänge berechnen: \t4 [BezKoord] [BezKoord]\n");
-    write("Loxodromischen Kurs berechnen: \t5 [BezKoord] [BezKoord]");
-    write("Zwischenpunkt berechnen: \t6 [BezKoord] [BezKoord] [Geschw_Double] [Treibstoff_Double] [Interval_Bool 1/0]\n");
+    write("Zentriwinkel: \t1 [Bezeichner] [Bezeichner]\n");
+    write("Kurswinkel: \t2 [Bezeichner] [Bezeichner]\n");
+    write("Scheitelpunkt: \t3 [Bezeichner] [Bezeichner]\n");
+    write("Streckenlänge: \t4 [Bezeichner] [Bezeichner]\n");
+    write("Loxodromischer Kurs: \t5 [Bezeichner] [Bezeichner]\n");
+    write("Zwischenpunkt: \t6 [Bezeichner] [Bezeichner] [Geschwindigkeit (double)] [Treibstoff (double)] [Interval (bool)]\n");
     write("\n");
     write("0 == exit\n\n");
 
