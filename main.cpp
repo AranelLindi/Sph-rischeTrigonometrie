@@ -15,8 +15,17 @@
 #define trennung "*******************" // Trennungszeichen für Konsolenausgabe
 #define InputFile "in.txt"
 
+#define BOLD "\x1B[1m"
+#define KMAG "\x1B[35m"
+#define KGRN "\x1B[32m"
+#define KRED "\x1B[31m"
+#define KBLU "\x1B[34m"
+#define RESET "\x1B[0m"
+
+#define color // entkommentieren wenn ohne farbliche Ausgabe kompiliert werden soll
+
 /// Globale Variablen
-const auto r_E{6371.0f};           // Erdradius in [km]
+const auto r_E{6378.137f};         // Erdradius in [km]
 constexpr auto rad{M_PI / 180.0f}; // Radiant (1 Grad = 180 Grad / pi)
 
 /// Strukturen
@@ -42,7 +51,9 @@ struct Angle // nicht instanziieren, sondern abgeleitete Klassen AngleEl/AngleAz
     const uint8_t sec;    // Winkelsekunden
 
     Angle(uint16_t _angle, uint8_t _min, uint8_t _sec) : angle(_angle), min(_min), sec(_sec) {} // Konstruktor
-    Angle(double _angle) : angle(static_cast<uint16_t>(round(_angle))), min(static_cast<uint8_t>(static_cast<int16_t>((_angle - angle) * 60))), sec(static_cast<uint8_t>(static_cast<int16_t>((((_angle - angle) * 60) - min) * 60))) {}
+    Angle(float _angle) : angle(static_cast<uint16_t>(truncf(fabsf(_angle)))),
+                          min(static_cast<uint8_t>(truncf((fabsf(_angle) - static_cast<float>(angle)) * 60.0))),
+                          sec(static_cast<uint8_t>(truncf((((_angle - static_cast<float>(fabsf(angle))) * 60) - static_cast<float>(min)) * 60.0))) {} // Konstruktor der Winkel (in Grad!) als Gleitkommazahl übernimmt
 
     void print(void) const noexcept
     {
@@ -56,7 +67,7 @@ struct AngleEl : Angle
     const directionEl dir;
 
     AngleEl(uint16_t _angle, uint8_t _min, uint8_t _sec, directionEl _dir) : Angle(_angle, _min, _sec), dir(_dir) {} // Konstruktor für Grad, Min., Sek.-Format
-    AngleEl(double _angle) : dir((_angle < 0) ? (directionEl::S) : (directionEl::N)), Angle(fabs(_angle)) {}         // Konstruktor für Gleitkommazahl-Format
+    AngleEl(float _angle) : dir((_angle < 0) ? (directionEl::S) : (directionEl::N)), Angle(fabsf(_angle)) {}         // Konstruktor für Gleitkommazahl-Format (in Grad!)
 
     void print(void) const noexcept
     {
@@ -74,7 +85,7 @@ struct AngleAz : Angle
     const directionAz dir;
 
     AngleAz(uint16_t _angle, uint8_t _min, uint8_t _sec, directionAz _dir) : Angle(_angle, _min, _sec), dir(_dir) {} // Konstruktor für Grad, Min., Sek.-Format
-    AngleAz(double _angle) : dir((_angle < 0) ? (directionAz::W) : (directionAz::O)), Angle(fabs(_angle)) {}         // Konstruktor für Gleitkommazahl-Format
+    AngleAz(float _angle) : dir((_angle < 0) ? (directionAz::W) : (directionAz::O)), Angle(fabsf(_angle)) {}         // Konstruktor für Gleitkommazahl-Format (in Grad!)
 
     void print(void) const noexcept
     {
@@ -101,7 +112,17 @@ struct Coordinate
 
     void print(void) const noexcept
     {
-        std::cout << no << ".) " << name << '\n';
+#ifdef color
+        std::cout << BOLD << KGRN;
+#endif
+        std::cout << no << ".) ";
+#ifdef color
+        std::cout << RESET << BOLD;
+#endif
+        std::cout << name << '\n';
+#ifdef color
+        std::cout << RESET;
+#endif
         std::cout << "\t\u03A6: "; // phi
         phi.print();
         std::cout << "\t\u03BB: "; // lambda
@@ -149,7 +170,7 @@ inline float calcLoxodromicCourse(const Coordinate &A, const Coordinate &B)
 // Berechnet loxodromische Länge von A nach B
 inline float calcLoxodromicLength(const Coordinate &A, const Coordinate &B)
 {
-    return r_E * fabsf(calcLoxodromicCourse(A, B));
+    return r_E * fabsf((getAngle(B.phi) - getAngle(A.phi)) / cosf(calcLoxodromicCourse(A, B)));
 }
 
 // Gibt Winkel zwischen zwei Punkten auf der Kugel zurück (Zentriwinkel)
@@ -265,40 +286,11 @@ Coordinate calcNorthPeakPoint(const Coordinate &A, const Coordinate &B)
     const auto phi_s{acosf(sinf(alpha) * cosf(phi_a))};
     const auto lambda_s{calcLambda_S(phi_s)};
 
-    // Bestimmung der Hemmisphären: Punkt liegt IMMER auf der Nordhalbkugel, Länge anhand des Vorzeichens von lambda_s ermitteln
-    //const directionEl dEl{directionEl::N};
-    //const directionAz dAz{(lambda_s < 0) ? (directionAz::W) : (directionAz::O)};
-
-    // Lambda um Nachkommastellen zu extrahieren:
-    /*const auto getFraction = [](float d) -> float {
-        float integral;
-        const auto frac{std::fmod(d, integral)};
-        return frac;
-    };*/
-
-    // Mit Nachkommastellen, Minuten und Sekunden der zwei Winkel berechnen:
-    //const auto phi_frac_min{getFraction(rad2deg(fabs(phi_s))) * 60.0f};
-    //const auto phi_frac_sec{getFraction(phi_frac_min) * 60.0f};
-
-    //const auto lambda_frac_min{getFraction(rad2deg(fabs(lambda_s))) * 60.0f};
-    //const auto lambda_frac_sec{getFraction(lambda_frac_min) * 60.0f};
-
-    /*return Coordinate(static_cast<uint16_t>(rad2deg(fabs(phi_s))),
-                      static_cast<uint8_t>(phi_frac_min),
-                      static_cast<uint8_t>(phi_frac_sec),
-                      dEl,
-                      static_cast<uint8_t>(rad2deg(fabs(lambda_s))),
-                      static_cast<uint8_t>(lambda_frac_min),
-                      static_cast<uint8_t>(lambda_frac_sec),
-                      dAz,
-                      "Nördlichster Punkt",
-                      0); /* Soll intuitiv eindeutig sein, dass die Koordinatenangabe nicht als Parameter verwendet werden kann */
-
-    return Coordinate(phi_s, lambda_s, "Nördlichster Punkt", 0);
+    return Coordinate(rad2deg(phi_s), rad2deg(lambda_s), "Nördlichster Punkt", 0);
 }
 
 // Berechnet Zwischenpunkt auf Großkreis (v == Speed, k == Verbrach)
-Coordinate calcCrashPoint(const Coordinate &A, const Coordinate &B, float v, float k, bool interval)
+Coordinate calcCrashPoint(const Coordinate &A, const Coordinate &B, float v, float fuel, float k)
 {
     // A
     const auto phi_a{getAngle(A.phi)};
@@ -308,6 +300,8 @@ Coordinate calcCrashPoint(const Coordinate &A, const Coordinate &B, float v, flo
     const auto phi_b{getAngle(B.phi)};
     const auto lambda_b{getAngle(B.lambda)};
 
+    const auto eAB{calcGCDkm(A, B)};
+
     // alpha
     const auto alpha{calcAlphaRad(A, B)};
 
@@ -315,32 +309,24 @@ Coordinate calcCrashPoint(const Coordinate &A, const Coordinate &B, float v, flo
     const auto deltaLambda{lambda_a - lambda_b};
 
     // Attribute für Streckenberechnung des Zwischenpunkts:
-    const auto time{calcGCDkm(A, B) / v}; // So lange reicht der Treibstoff [h]
-    const auto m{k * time};               // Treibstoffmenge (L)
+    //const auto time{calcFlightTime(fuel,k)}; // So lange reicht der Treibstoff [h]
 
-    const auto distance{(m * v) / (k * r_E)}; // Strecke von A nach B in rad
+    const auto calcDistanceRatio = [v, fuel, eAB, k]() {
+        const auto prop{(v * fuel) / (eAB * k)}; // > 1: Bewegung über Punkt B hinaus (also wieder zurück), < 1: B wird nicht erreicht, Zwischenpunkt dazwischen
+        float integral;
+        const auto frac{std::modf(prop, &integral)}; // Nachkommastellen des Verhältnisses
 
-    // Annahme: Bewegung von A in Richtung B!
-    //const auto calcDelta = [interval, distance]() -> double {
-    /*if (interval)
-        {                                               // Quasi wie hin und hergeschossener Ball: Bewegt sich nur im Intervall AB
-            const auto prop{range / distance};          // >1: Bewegung über Punkt B hinaus (zurück oder weiter je nach [interval]); <1: Bewegung im Interval [A,B)
-            float integral;                             // nicht benötigt
-            const auto frac{std::fmod(prop, integral)}; // Nachkommastellen des Verhältnisses
+        if (static_cast<uint32_t>(integral) % 2)
+            return 1 - frac; // von B ausgehend
+        else
+            return frac; // von A ausgehend
+    };
 
-            if ((static_cast<uint32_t>(prop)) % 2) // Zahl ist ungerade: von A ausgehend
-                return frac;
-            else // Zahl ist gerade: von B ausgehend
-                return 1 - frac;
-        }
-        else                         // fliegt - sofern Reichweite ausreicht - über B hinaus
-            return range / distance;*/
-    // einfaches Streckenverhältnis zurückgeben
-    //};
+    const auto distance{calcDistanceRatio() * calcGCDrad(A, B)}; // Strecke von A nach B in rad
 
     // Längengrad muss abhängig von Vorzeichen berechnet werden:
     const auto calcLambda_p = [deltaLambda, distance, lambda_a, phi_a](float phi_p) {
-        if (((deltaLambda < 0) && (distance <= M_PI)) || ((deltaLambda > 0) && (distance > M_PI)))                 // arccos() bildet nur auf Interval [0; M_PI) ab, daher dessen Argument zusätzlich in Abhängigkeit von d behandeln!
+        if (((deltaLambda < 0) && (distance <= M_PI)) || ((deltaLambda > 0) && (distance > M_PI)))               // arccos() bildet nur auf Interval [0; M_PI) ab, daher dessen Argument zusätzlich in Abhängigkeit von d behandeln!
             return lambda_a + acosf((cosf(distance) - sinf(phi_a) * sinf(phi_p)) / (cosf(phi_a) * cosf(phi_p))); // Flugrichtung: Osten
         else
             return lambda_a - acosf((cosf(distance) - sinf(phi_a) * sinf(phi_p)) / (cosf(phi_a) * cosf(phi_p))); // Flugrichtung: Westen
@@ -377,8 +363,6 @@ Coordinate calcCrashPoint(const Coordinate &A, const Coordinate &B, float v, flo
             return phi_a_dach + distance; // Flugrichtung: Norden
     };
 
-    //const auto deltaPhi_dach{calcDeltaPhiDach(transformPhi(phi_a, lambda_a) - transformPhi(phi_b, lambda_b))};
-
     // Breitengrad wird auf Interval (-pi; pi] reduziert und auf Ausgangsinterval zurück transformiert:
     const auto calcInterval = [](float phi_p_dach) -> float {
         if (phi_p_dach > (M_PI / 2))
@@ -412,19 +396,23 @@ Coordinate calcCrashPoint(const Coordinate &A, const Coordinate &B, float v, flo
         else
             return calcLambda_p(phi_p);
     };
+    // ****************************************************
 
     const auto phi_p{resPhi_p()};
     const auto lambda_p{resLambda_p(phi_p)};
 
-    return Coordinate(phi_p, lambda_p, "Zwischenpunkt", 0);
+    return Coordinate(rad2deg(phi_p), rad2deg(lambda_p), "Zwischenpunkt", 0);
 }
 
 // Gibt eine Koordinate aus der Sammlung zurück, die das entsprechende Index trägt:
-Coordinate getCoordinate(const std::vector<Coordinate> &coords, uint8_t i)
+const Coordinate &getCoordinate(const std::vector<Coordinate> &coords, uint8_t i)
 {
+    uint8_t counter{0};
     for (const auto &ele : coords)
         if (ele.no == i)
-            return ele;
+            return coords.at(counter);
+        else
+            counter++;
 
     // Am Ende der Schleife wurde kein passendes Element gefunden, dann eine Exception werfen:
     throw std::logic_error("Kein zugehöriges Koordinatenobjekt gefunden!");
@@ -482,18 +470,49 @@ inline void printRouteLength(const Coordinate &A, const Coordinate &B) noexcept
     std::cout << "Strecke auf Großkreis von " << A.name << " nach " << B.name << ":\t" << std::setprecision(5) << calcGCDkm(A, B) << " km" << std::endl;
 }
 
-void printCrashPoint(const Coordinate &A, const Coordinate &B, float speed, float verbrauch, bool interval = true)
+void printCrashPoint(const Coordinate &A, const Coordinate &B, float speed, float fuel, float consumption)
 {
-    std::cout << "Zwischenpunkt auf Großkreis von " << A.name << " nach " << B.name << " liegt ";
-    calcCrashPoint(A, B, speed, verbrauch, interval).print();
+    std::cout << "Zwischenpunkt auf Großkreis von " << A.name << " nach " << B.name << ":\n";
+    calcCrashPoint(A, B, speed, fuel, consumption).print();
     std::cout << std::endl;
+}
+
+template <class... Args> // fold-expression
+void printOption(const std::string &name, uint8_t number, char c, Args... zusatz)
+{
+#ifdef color
+    std::cout << BOLD << KBLU;
+#endif
+
+    std::cout << name;
+
+#ifdef color
+    std::cout << RESET;
+#endif
+
+    std::cout << ":\t" << (uint16_t)number << " [A-" << c << "] [A-" << c << "]";
+    ((std::cout << ' ' << std::forward<Args>(zusatz)), ...);
+    std::cout << std::endl;
+
+#ifdef color
+    std::cout << RESET;
+#endif
 }
 
 int main(void)
 {
     // Einleitung:
-    std::cout << trennung << "\n\n\tSPHÄRISCHE TRIGONOMETRIE\n\n\t\t" << trennung << "\n\n"
-              << "  Daten werden aus '" << InputFile << "' eingelesen...\n"
+
+#ifdef color
+    std::cout << BOLD;
+#endif
+
+    std::cout << trennung << "\n\n\tSPHÄRISCHE TRIGONOMETRIE\n\n\t\t" << trennung << "\n\n";
+
+#ifdef color
+    std::cout << RESET;
+#endif
+    std::cout << "  Daten werden aus '" << InputFile << "' eingelesen...\n"
               << std::endl;
 
     // Koordinaten aus Datei einlesen:
@@ -513,6 +532,10 @@ int main(void)
     // Schreibt in die Konsole:
     const auto write = [](std::string str) -> void {
         std::cout << str;
+    };
+
+    const auto writeBez = [](int8_t c) {
+        std::cout << "[A-" << (char)c << "]";
     };
 
     // Wandelt einen char in entsprechende Richtung um (Azimut):
@@ -584,27 +607,48 @@ int main(void)
     }
     catch (const std::exception &ex)
     {
+#ifdef color
+        std::cout << KRED;
+#endif
         std::cerr << "Einlesefehler in Zeile " << static_cast<uint32_t>(counter) << '!' << std::endl;
+#ifdef color
+        std::cout << RESET;
+#endif
+
         return 1;
     }
 
     // Alle eingelesenen Koordinaten anzeigen:
-    for (auto elem : coords)
+    for (const auto elem : coords)
         elem.print();
 
+#ifdef color
+    std::cout << BOLD;
+#endif
     write("\nBitte Funktionscode mit Parametern eingeben: (z.B. 1 A B)\n");
+#ifdef color
+    std::cout << RESET;
+#endif
     write("********************************************\n");
 
     // Mögliche Operationen posten
-    write("Zentriwinkel: \t1 [Bezeichner] [Bezeichner]\n");
-    write("Kurswinkel: \t2 [Bezeichner] [Bezeichner]\n");
-    write("Scheitelpunkt: \t3 [Bezeichner] [Bezeichner]\n");
-    write("Streckenlänge: \t4 [Bezeichner] [Bezeichner]\n");
-    write("Loxodromischer Kurs: \t5 [Bezeichner] [Bezeichner]\n");
-    write("Loxodromische Länge:\t6 [Bezeichner] [Bezeichner]\n");
-    write("Zwischenpunkt: \t7 [Bezeichner] [Bezeichner] [Geschwindigkeit (double)] [Treibstoff (double)] [Verbrauch (double)] [Interval (bool)]\n");
-    write("\n");
-    write("0 == exit\n\n");
+    const char i{number - 1};
+
+    printOption("Zentriwinkel", 1, i);
+    printOption("Kurswinkel", 2, i);
+    printOption("Scheitelpunkt", 3, i);
+    printOption("Streckenlänge", 4, i);
+    printOption("Loxodromischer Kurs", 5, i);
+    printOption("Loxodromische Länge", 6, i);
+    printOption("Zwischenpunkt", 7, i, "[vel in km/h]", "[fuel in L]", "[cons in L/h]");
+
+#ifdef color
+    std::cout << BOLD << KRED;
+#endif
+    write("\n 0 == exit\n\n");
+#ifdef color
+    std::cout << RESET;
+#endif
 
     std::string cinput; // Enthält Benutzereingabe auf Konsole
 
@@ -624,8 +668,15 @@ int main(void)
             if (cmd == 0)
                 break;
 
-            const auto A{getCoordinate(coords, static_cast<uint8_t>(userEingabe[1].c_str()[0]))};
-            const auto B{getCoordinate(coords, static_cast<uint8_t>(userEingabe[2].c_str()[0]))};
+            const auto &A{getCoordinate(coords, static_cast<uint8_t>(userEingabe[1].c_str()[0]))};
+            const auto &B{getCoordinate(coords, static_cast<uint8_t>(userEingabe[2].c_str()[0]))};
+
+            // Fehlerhafte Benutzereingabe abfangen:
+            if (A.name == B.name)
+            {
+                throw std::logic_error("Start und Ziel ist gleiche Koordinate!");
+                break;
+            }
 
             switch (cmd)
             {
@@ -648,14 +699,14 @@ int main(void)
                 printLoxodromicLength(A, B);
                 break;
             case 7:
-                const auto Speed{std::atof(userEingabe[3].c_str())};     // Geschwindigkeit in km/h
-                const auto Fuel{std::atof(userEingabe[4].c_str())};      // Treibstoff in t
-                const auto Verbrauch{std::atof(userEingabe[5].c_str())}; // Verbrauch in L/h
-                const auto Interval{std::atoi(userEingabe[6].c_str())};  // darf sich nur im Intervall (true) oder auf ganzem Großkreis bewegen
+                const auto speed{std::atof(userEingabe[3].c_str())};       // Geschwindigkeit in km/h
+                const auto fuel{std::atof(userEingabe[4].c_str())};        // Treibstoff in t
+                const auto consumption{std::atof(userEingabe[5].c_str())}; // Verbrauch in L/h
+                //const auto Interval{std::atoi(userEingabe[6].c_str())};  // darf sich nur im Intervall (true) oder auf ganzem Großkreis bewegen
 
                 //const auto distance{calcGCDkm(A, B)};
 
-                printCrashPoint(A, B, Speed, Verbrauch, static_cast<bool>(Interval));
+                printCrashPoint(A, B, speed, fuel, consumption); //, static_cast<bool>(Interval));
 
                 break;
             }
